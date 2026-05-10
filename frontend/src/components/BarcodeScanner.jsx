@@ -45,7 +45,13 @@ export default function BarcodeScanner({ onScan, active }) {
         await scanner.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 280, height: 180 } },
-          (decodedText) => onScan(decodedText),
+          (decodedText) => {
+            try {
+              onScan(decodedText);
+            } catch (e) {
+              console.error('Error en onScan:', e);
+            }
+          },
           () => {}
         );
 
@@ -59,10 +65,14 @@ export default function BarcodeScanner({ onScan, active }) {
     startScanner();
 
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
+      try {
+        if (scannerRef.current) {
+          scannerRef.current.stop().catch(() => {});
+        }
+      } catch (e) {
+        console.error('Error en cleanup:', e);
       }
+      scannerRef.current = null;
     };
   }, [active, onScan]);
 

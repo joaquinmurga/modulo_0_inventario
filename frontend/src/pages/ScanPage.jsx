@@ -1,9 +1,42 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, Component } from 'react';
 import BlockSelector from '../components/BlockSelector';
 import BarcodeScanner from '../components/BarcodeScanner';
 import ProductModal from '../components/ProductModal';
 import { useBarcodeScan } from '../hooks/useBarcodeScan';
 import { api } from '../services/api';
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error) {
+    console.error('ErrorBoundary:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-800 text-sm">
+          <p>Error: {this.state.error?.message || 'Error desconocido'}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-xs"
+          >
+            Recargar
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 export default function ScanPage() {
   const [block, setBlock] = useState('');
@@ -43,8 +76,9 @@ export default function ScanPage() {
   }
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Escaneo de Inventario</h1>
+    <ErrorBoundary>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">Escaneo de Inventario</h1>
 
       <BlockSelector value={block} onChange={setBlock} />
 
@@ -111,6 +145,7 @@ export default function ScanPage() {
           onCancel={() => setPendingBarcode(null)}
         />
       )}
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
