@@ -25,6 +25,7 @@ export default function ScanPage() {
         setLastScan({ barcode, product: data.product, action: 'registered' });
       }
 
+      setCameraActive(false); // Detener cámara después de escaneo
       setProcessing(false);
     },
     [block, processing, lastScan]
@@ -38,6 +39,7 @@ export default function ScanPage() {
     await api.scan(productData.barcode, block);
     setLastScan({ barcode: productData.barcode, product: productData, action: 'created' });
     setPendingBarcode(null);
+    setCameraActive(false); // Detener cámara después de crear producto
   }
 
   return (
@@ -79,14 +81,26 @@ export default function ScanPage() {
       )}
 
       {lastScan && (
-        <div className={`rounded-xl p-4 text-sm font-medium ${
+        <div className={`rounded-xl p-4 mb-4 text-sm font-medium ${
           lastScan.action === 'created'
             ? 'bg-blue-50 border border-blue-200 text-blue-800'
             : 'bg-green-50 border border-green-200 text-green-800'
         }`}>
-          {lastScan.action === 'created' ? '✦ Nuevo producto creado: ' : '✓ Registrado: '}
-          <strong>{lastScan.product.name}</strong>
-          <span className="text-xs ml-2 opacity-70">({lastScan.barcode})</span>
+          <div className="flex items-center justify-between">
+            <div>
+              {lastScan.action === 'created' ? '✦ Nuevo producto creado: ' : '✓ Registrado: '}
+              <strong>{lastScan.product.name}</strong>
+              <span className="text-xs ml-2 opacity-70">({lastScan.barcode})</span>
+            </div>
+            {!cameraActive && (
+              <button
+                onClick={() => setCameraActive(true)}
+                className="ml-4 px-3 py-1 bg-opacity-20 bg-current rounded text-xs font-semibold hover:bg-opacity-30 transition-all whitespace-nowrap"
+              >
+                Continuar escaneando
+              </button>
+            )}
+          </div>
         </div>
       )}
 

@@ -5,19 +5,29 @@ export default function BarcodeScanner({ onScan, active }) {
   const scannerRef = useRef(null);
   const [error, setError] = useState(null);
 
+  async function stopScanner() {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+        await scannerRef.current.clear();
+      } catch {
+        // Ignorar errores al detener
+      }
+      scannerRef.current = null;
+    }
+  }
+
   useEffect(() => {
     if (!active) {
       stopScanner();
       return;
     }
 
-    let scanner;
-
     async function startScanner() {
       const { Html5Qrcode } = await import('html5-qrcode');
       if (!containerRef.current) return;
 
-      scanner = new Html5Qrcode('qr-reader');
+      const scanner = new Html5Qrcode('qr-reader');
       scannerRef.current = scanner;
 
       try {
@@ -36,13 +46,6 @@ export default function BarcodeScanner({ onScan, active }) {
     startScanner();
     return () => stopScanner();
   }, [active, onScan]);
-
-  async function stopScanner() {
-    if (scannerRef.current) {
-      try { await scannerRef.current.stop(); } catch {}
-      scannerRef.current = null;
-    }
-  }
 
   if (!active) return null;
 
