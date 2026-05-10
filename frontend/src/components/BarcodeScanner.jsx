@@ -3,84 +3,109 @@ import { useEffect, useRef, useState } from 'react';
 export default function BarcodeScanner({ onScan, active }) {
   const containerRef = useRef(null);
   const scannerRef = useRef(null);
-  const streamRef = useRef(null);
   const [error, setError] = useState(null);
+  const isMountedRef = useRef(true);
 
-  async function stopScanner() {
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-      } catch (e) {
-        console.error('Error stopping scanner:', e);
-      }
-    }
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
-    // Detener todos los media tracks (la cámara física)
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        track.stop();
-      });
-      streamRef.current = null;
-    }
+  const stopScanner = async () => {
+    if (!scannerRef.current) return;
 
-    // Limpiar la librería
     try {
-      if (scannerRef.current) {
-        await scannerRef.current.clear();
+      // Parar html5-qrcode
+      await scannerRef.current.stop();
+    } catch (e) {
+      console.error('Error al detener scanner:', e);
+    }
+
+    try {
+      // Limpiar html5-qrcode
+      await scannerRef.current.clear();
+    } catch (e) {
+      console.error('Error al limpiar scanner:', e);
+    }
+
+    // Forzar parada de la cámara a nivel de navegador
+    try {
+      const video = containerRef.current?.querySelector('video');
+      if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach((track) => {
+          track.stop();
+        });
+        video.srcObject = null;
       }
     } catch (e) {
-      console.error('Error clearing scanner:', e);
+      console.error('Error al detener video tracks:', e);
     }
 
     scannerRef.current = null;
 
-    // Remover el elemento del DOM
+    // Limpiar DOM
     if (containerRef.current) {
       containerRef.current.innerHTML = '';
     }
-  }
+  };
 
   useEffect(() => {
+    // Parar si no está activo
     if (!active) {
       stopScanner();
       return;
     }
 
-    async function startScanner() {
-      const { Html5Qrcode } = await import('html5-qrcode');
-      if (!containerRef.current) return;
-
-      const scanner = new Html5Qrcode('qr-reader');
-      scannerRef.current = scanner;
+    // Iniciar cámara
+    const initScanner = async () => {
+      if (!isMountedRef.current) return;
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-        });
-        streamRef.current = stream;
+        const { Html5Qrcode } = await import('html5-qrcode');
+
+        // Recrear elemento qr-reader
+        if (containerRef.current) {
+          containerRef.current.innerHTML = '<div id="qr-reader" style="width: 100%;"></div>';
+        }
+
+        const scanner = new Html5Qrcode('qr-reader');
+        scannerRef.current = scanner;
 
         await scanner.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 280, height: 180 } },
-          (decodedText) => onScan(decodedText),
+          (decodedText) => {
+            if (isMountedRef.current) {
+              onScan(decodedText);
+            }
+          },
           () => {}
         );
-        setError(null);
+
+        if (isMountedRef.current) {
+          setError(null);
+        }
       } catch (err) {
-        setError('No se pudo acceder a la cámara. Usa el escáner físico o revisa los permisos.');
+        if (isMountedRef.current) {
+          setError('No se pudo acceder a la cámara. Usa el escáner físico.');
+        }
         scannerRef.current = null;
       }
-    }
+    };
 
-    startScanner();
-    return () => stopScanner();
+    initScanner();
+
+    return () => {
+      stopScanner();
+    };
   }, [active, onScan]);
 
   if (!active) return null;
 
   return (
     <div className="rounded-xl overflow-hidden bg-black">
-      <div id="qr-reader" ref={containerRef} style={{ width: '100%' }} />
+      <div ref={containerRef} style={{ width: '100%' }} />
       {error && (
         <p className="text-yellow-400 text-sm text-center py-3 px-4">{error}</p>
       )}
