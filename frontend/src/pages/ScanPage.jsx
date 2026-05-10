@@ -47,34 +47,27 @@ export default function ScanPage() {
 
   const handleScan = useCallback(
     async (barcode) => {
-      // Evitar duplicados
       if (!block || processingRef.current || barcode === lastScan?.barcode) return;
 
       processingRef.current = true;
-      console.log('🔄 [ScanPage] handleScan iniciado:', { barcode, block });
 
       try {
         const { status, data } = await api.scan(barcode, block);
-        console.log('✓ [ScanPage] API scan completado:', { status });
 
         if (status === 404) {
-          console.log('❓ [ScanPage] Producto no encontrado');
           setPendingBarcode(barcode);
         } else {
-          console.log('✓ [ScanPage] Producto registrado:', data.product.name);
           setLastScan({ barcode, product: data.product, action: 'registered' });
         }
 
-        console.log('⏹️ [ScanPage] Deteniendo cámara...');
-        setCameraActive(false); // Detener cámara después de escaneo
+        setCameraActive(false);
       } catch (e) {
-        console.error('✗ [ScanPage] Error en handleScan:', e);
+        // Ignorar errores de escaneo
       } finally {
         processingRef.current = false;
-        console.log('✓ [ScanPage] handleScan completado');
       }
     },
-    [block, lastScan] // Solo block y lastScan, NO processing
+    [block, lastScan]
   );
 
   // Escáner físico (pistola HID)
