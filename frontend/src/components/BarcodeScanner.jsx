@@ -3,17 +3,40 @@ import { useEffect, useRef, useState } from 'react';
 export default function BarcodeScanner({ onScan, active }) {
   const containerRef = useRef(null);
   const scannerRef = useRef(null);
+  const streamRef = useRef(null);
   const [error, setError] = useState(null);
 
   async function stopScanner() {
     if (scannerRef.current) {
       try {
         await scannerRef.current.stop();
-        await scannerRef.current.clear();
-      } catch {
-        // Ignorar errores al detener
+      } catch (e) {
+        console.error('Error stopping scanner:', e);
       }
-      scannerRef.current = null;
+    }
+
+    // Detener todos los media tracks (la cámara física)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop();
+      });
+      streamRef.current = null;
+    }
+
+    // Limpiar la librería
+    try {
+      if (scannerRef.current) {
+        await scannerRef.current.clear();
+      }
+    } catch (e) {
+      console.error('Error clearing scanner:', e);
+    }
+
+    scannerRef.current = null;
+
+    // Remover el elemento del DOM
+    if (containerRef.current) {
+      containerRef.current.innerHTML = '';
     }
   }
 
@@ -31,6 +54,11 @@ export default function BarcodeScanner({ onScan, active }) {
       scannerRef.current = scanner;
 
       try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+        });
+        streamRef.current = stream;
+
         await scanner.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 280, height: 180 } },
@@ -40,6 +68,7 @@ export default function BarcodeScanner({ onScan, active }) {
         setError(null);
       } catch (err) {
         setError('No se pudo acceder a la cámara. Usa el escáner físico o revisa los permisos.');
+        scannerRef.current = null;
       }
     }
 
