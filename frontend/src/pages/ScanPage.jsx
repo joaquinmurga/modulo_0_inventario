@@ -1,4 +1,4 @@
-import { useState, useCallback, Component } from 'react';
+import { useState, useCallback, Component, useRef } from 'react';
 import BlockSelector from '../components/BlockSelector';
 import BarcodeScanner from '../components/BarcodeScanner';
 import ProductModal from '../components/ProductModal';
@@ -43,25 +43,38 @@ export default function ScanPage() {
   const [cameraActive, setCameraActive] = useState(false);
   const [pendingBarcode, setPendingBarcode] = useState(null);
   const [lastScan, setLastScan] = useState(null);
-  const [processing, setProcessing] = useState(false);
+  const processingRef = useRef(false); // Usar ref en lugar de estado
 
   const handleScan = useCallback(
     async (barcode) => {
-      if (!block || processing || barcode === lastScan?.barcode) return;
-      setProcessing(true);
+      // Evitar duplicados
+      if (!block || processingRef.current || barcode === lastScan?.barcode) return;
 
-      const { status, data } = await api.scan(barcode, block);
+      processingRef.current = true;
+      console.log('🔄 [ScanPage] handleScan iniciado:', { barcode, block });
 
-      if (status === 404) {
-        setPendingBarcode(barcode);
-      } else {
-        setLastScan({ barcode, product: data.product, action: 'registered' });
+      try {
+        const { status, data } = await api.scan(barcode, block);
+        console.log('✓ [ScanPage] API scan completado:', { status });
+
+        if (status === 404) {
+          console.log('❓ [ScanPage] Producto no encontrado');
+          setPendingBarcode(barcode);
+        } else {
+          console.log('✓ [ScanPage] Producto registrado:', data.product.name);
+          setLastScan({ barcode, product: data.product, action: 'registered' });
+        }
+
+        console.log('⏹️ [ScanPage] Deteniendo cámara...');
+        setCameraActive(false); // Detener cámara después de escaneo
+      } catch (e) {
+        console.error('✗ [ScanPage] Error en handleScan:', e);
+      } finally {
+        processingRef.current = false;
+        console.log('✓ [ScanPage] handleScan completado');
       }
-
-      setCameraActive(false); // Detener cámara después de escaneo
-      setProcessing(false);
     },
-    [block, processing, lastScan]
+    [block, lastScan] // Solo block y lastScan, NO processing
   );
 
   // Escáner físico (pistola HID)
