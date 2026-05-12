@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "FlexSaaS Inventario",
+    "slug": "flexsaas-inventario",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "flexsaas",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#4F46E5"
+      },
+      "package": "com.flexsaas.inventario",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir acceso a la camara para escanear codigos de barras y fotografiar productos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permitir acceso a fotos para analizar productos con IA."
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}

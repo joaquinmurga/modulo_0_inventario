@@ -47,7 +47,7 @@ const InventoryController = {
   },
 
   getLogs(req, res) {
-    const stock = LogModel.getStock(req.query.block || null);
+    const stock = LogModel.getStock(req.query.block || null, req.query.q || null);
     res.json(stock);
   },
 

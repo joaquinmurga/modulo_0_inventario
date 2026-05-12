@@ -6,27 +6,37 @@
 
 ## Logica de negocio
 
-### Flujo de escaneo
-1. Usuario selecciona un **Bloque** (ej. "Gondola 1", "Vitrina A").
-2. Ingresa el codigo de barras por uno de tres metodos:
+### Flujo de escaneo — Mobile (modo "Solo escanear", default)
+1. Usuario selecciona un **Bloque**.
+2. Ingresa codigo por campo manual o camara continua (nunca se detiene).
+3. `POST /scan`:
+   - Existe → registra log, muestra feedback, listo para siguiente.
+   - No existe (404) → crea producto con barcode como nombre provisional → `POST /scan`. Sin interrupcion.
+
+### Flujo de escaneo — Mobile (modo "Escanear y completar")
+1. Usuario selecciona un **Bloque**.
+2. Ingresa el codigo de barras por uno de dos metodos:
    - **Campo manual**: tipea el codigo y presiona Enter o el boton "Registrar".
-   - **Pistola laser (HID)**: escribe automaticamente via hook global `useBarcodeScan`. Si el campo manual no tiene foco, el hook captura la secuencia y dispara sin intervencion del usuario.
-   - **Camara**: `html5-qrcode` en modo continuo.
+   - **Camara**: `CameraView` nativa, continua (no se detiene tras cada escaneo).
 3. `POST /scan`:
    - Producto existe → registra log, muestra feedback verde.
    - Producto no existe (404) → abre `ProductModal`.
 4. En `ProductModal`, el usuario elige:
    - Completar el formulario manualmente.
-   - Tomar una foto en vivo (getUserMedia) para que Gemini rellene los campos.
-   - Seleccionar una imagen del sistema de archivos para lo mismo.
+   - Tomar foto (launchCameraAsync) o abrir galeria (launchImageLibraryAsync) para analisis con Gemini.
 5. Al confirmar → `POST /products` + `POST /scan` en secuencia.
 
+### Flujo de escaneo — Web
+1. Usuario selecciona un **Bloque**.
+2. Ingresa codigo: campo manual, pistola laser (HID via `useBarcodeScan`) o camara (`html5-qrcode`).
+3. `POST /scan`: existe → log; no existe → abre `ProductModal` con opciones manual o IA.
+
 ### Flujo CRUD desde Dashboard
-- **Nuevo producto**: boton "+ Nuevo producto" → `EditProductModal` en modo creacion (barcode editable).
-- **Escaneo rapido**: campo de codigo en el Dashboard → si existe abre `AdjustQtyModal`, si no existe abre `EditProductModal` con barcode pre-llenado. La pistola laser funciona aqui tambien (hook global activo cuando no hay modales abiertos).
+- **Nuevo producto**: boton "+ Nuevo producto" → `EditProductModal` / formulario inline en modo creacion (barcode editable).
+- **Escaneo rapido**: campo de codigo en el Dashboard → si existe abre `AdjustQtyModal`, si no existe abre `EditProductModal` con barcode pre-llenado.
 - **Editar**: icono de lapiz por fila → `EditProductModal` en modo edicion (barcode read-only).
 - **Ajustar cantidad**: icono de flecha → `AdjustQtyModal` (toggle Agregar/Retirar, selector de bloque, botones +/-).
-- **Eliminar**: icono de papelera → confirmacion inline (Si/No) → DELETE en cascada (logs + producto).
+- **Eliminar**: icono de papelera → confirmacion inline (web) o `Alert.alert` (mobile) → DELETE en cascada.
 
 ### Reglas de negocio
 - Un producto puede estar en multiples bloques.
@@ -62,17 +72,19 @@ CREATE TABLE IF NOT EXISTS inventory_logs (
 
 ## Endpoints de la API
 
-Base URL: `http://localhost:3001/api/inventory`
+Base URL web: `http://localhost:3001/api/inventory`
+Base URL mobile: `http://<IP_LAN>:3001/api/inventory` (configurable en Ajustes)
 
 | Metodo | Ruta                  | Descripcion                                         |
 |--------|-----------------------|-----------------------------------------------------|
+| GET    | `/health`             | Test de conexion. Devuelve `{ module: 'FlexSaaS' }` |
 | GET    | `/products`           | Lista todos los productos ordenados por nombre      |
 | GET    | `/products/:barcode`  | Busca producto por codigo de barras                 |
 | POST   | `/products`           | Crea un nuevo producto                              |
 | PUT    | `/products/:id`       | Edita nombre, categoria, descripcion, precio        |
 | DELETE | `/products/:id`       | Elimina producto y todos sus logs (cascada)         |
 | POST   | `/scan`               | Registra escaneo. 200 si existe, 404 si no          |
-| GET    | `/logs`               | Stock agregado. Opcional: `?block=Gondola 1`        |
+| GET    | `/logs`               | Stock agregado. Opcional: `?block=X` y/o `?q=texto` |
 | GET    | `/blocks`             | Lista de bloques con al menos un log                |
 | POST   | `/logs/adjust`        | Ajusta cantidad (positivo=agregar, negativo=retirar)|
 | POST   | `/analyze-image`      | Analiza imagen con Gemini → devuelve datos producto |
@@ -100,7 +112,13 @@ Base URL: `http://localhost:3001/api/inventory`
 ```
 Respuesta: `{ name, brand, model, category, capacity, description }` (nulls si no visible).
 
-### GET /logs (sin filtro)
+### GET /logs (sin filtro / con busqueda)
+```
+GET /logs                     → todos los productos
+GET /logs?q=coca              → filtra por nombre, barcode o categoria (LIKE %coca%)
+GET /logs?block=Gondola+1     → filtra por bloque
+GET /logs?q=leche&block=X     → combina ambos filtros
+```
 ```json
 [{ "product_id", "barcode", "name", "category", "description", "price",
    "total_quantity", "blocks", "last_scan" }]
@@ -108,7 +126,7 @@ Respuesta: `{ name, brand, model, category, capacity, description }` (nulls si n
 
 ---
 
-## Componentes frontend
+## Componentes web (frontend/)
 
 ### ScanPage
 - Campo de texto manual + boton Registrar (Enter).
@@ -125,7 +143,7 @@ Respuesta: `{ name, brand, model, category, capacity, description }` (nulls si n
 
 ### ProductModal
 - Se muestra cuando el codigo escaneado no existe en la DB.
-- Opciones para rellenar: manual o con IA (foto en vivo / archivo).
+- Opciones para rellenar: manual o con IA (foto en vivo getUserMedia / archivo).
 - Campos: nombre, categoria, descripcion, precio.
 
 ### EditProductModal
@@ -138,18 +156,71 @@ Respuesta: `{ name, brand, model, category, capacity, description }` (nulls si n
 - Input de cantidad con botones +/-.
 - Selector de bloque: bloques existentes + "Otro bloque..." con input libre.
 
-### BarcodeScanner
+### BarcodeScanner (web)
 - Import dinamico de `html5-qrcode`.
 - Al desactivarse: stop() + detiene video tracks manualmente + limpia innerHTML.
 - Configuracion: facingMode environment, fps 10, qrbox 280x180.
 
-### BlockSelector
+### BlockSelector (web)
 - 5 presets: Gondola 1, Gondola 2, Vitrina A, Vitrina B, Deposito.
 - Input libre para bloques personalizados.
 
 ---
 
-## Hook useBarcodeScan
+## Componentes mobile (mobile/src/components/)
+
+### NoServer
+- Pantalla mostrada cuando `serverOk === false`.
+- Boton que navega a `/settings_tab` via `useRouter()`.
+
+### BarcodeScanner (mobile)
+- `CameraView` de expo-camera con `onBarcodeScanned`.
+- `useCameraPermissions()` para solicitar permisos en runtime.
+- Tipos: ean13, ean8, ean5, code128, code39, upc_a, qr.
+- Height fija 220px, facing "back".
+
+### BlockSelector (mobile)
+- ScrollView horizontal con pills de presets.
+- TextInput + boton "Usar" para bloques personalizados.
+
+### ProductModal (mobile)
+- Bottom sheet Modal (justifyContent: 'flex-end').
+- Botones: "Tomar foto" (launchCameraAsync) y "Galeria" (launchImageLibraryAsync).
+- base64: true, quality: 0.7 para enviar a `api.analyzeImage()`.
+- Selector de categoria como pills horizontales.
+
+---
+
+## Screens mobile (mobile/app/)
+
+### scan.jsx
+- Verifica `serverOk` al montar via `getServerUrl()`.
+- `processingRef = useRef(false)` para evitar doble procesamiento.
+- **Control segmentado** "Solo escanear" (default) / "Escanear y completar" — seleccionar uno deselecciona el otro.
+- TextInput para entrada manual con `onSubmitEditing`.
+- Camara nativa con `BarcodeScanner` — no se detiene tras cada escaneo exitoso.
+- En 404 con "Solo escanear": crea producto con barcode como nombre, registra log, continua.
+- En 404 con "Escanear y completar": abre `ProductModal`.
+
+### dashboard.jsx
+- `FlatList` de productos (no tabla — apropiado para mobile).
+- **Busqueda server-side**: debounce 400ms → `GET /logs?q=<texto>`. Sin filtro local.
+- `currentSearch` ref: las mutaciones refetchean con el termino activo.
+- Carga datos solo al montar; no recarga en cada foco del tab.
+- **ProductFormModal** incluye seccion "Completar con IA": botones "Tomar foto" y "Galeria" con `expo-image-picker` + `api.analyzeImage()`. Disponible tanto al crear como al editar.
+- `Alert.alert()` para confirmacion de eliminacion.
+- Stats cards: total productos y total unidades.
+
+### settings_tab.jsx
+- TextInput para URL del servidor.
+- "Probar conexion" → `api.testConnection()` (GET /health).
+- "Guardar" → `setServerUrl(url)`.
+- "Desconectar" → `clearServerUrl()`.
+- Instrucciones para obtener IP local con `ipconfig`.
+
+---
+
+## Hook useBarcodeScan (solo web)
 
 ```js
 useBarcodeScan(onScan, enabled)
@@ -158,7 +229,7 @@ useBarcodeScan(onScan, enabled)
 - Acumula caracteres en buffer.
 - Si pasan mas de **300ms** sin tecla y el buffer no esta vacio → resetea (escritura humana).
 - Al recibir `Enter` → llama `onScan(buffer.trim())` y limpia.
-- En ScanPage: deshabilitado cuando el campo manual tiene foco (para evitar doble disparo).
+- En ScanPage: deshabilitado cuando el campo manual tiene foco.
 - En DashboardPage: deshabilitado cuando hay cualquier modal abierto.
 
 ---
@@ -171,22 +242,49 @@ useBarcodeScan(onScan, enabled)
 - **Servicio:** `backend/modules/inventory/visionService.js`
 - **Prompt:** instruye a devolver JSON plano sin caracteres especiales ni emojis.
 - **Guardado:** `/uploads/<barcode>_<timestamp>.jpg` (excluido de git y Claude).
-- **Captura frontend:** `getUserMedia` con canvas (foto en vivo) o `FileReader` (archivo).
+- **Captura web:** `getUserMedia` con canvas (foto en vivo) o `FileReader` (archivo).
+- **Captura mobile:** `launchCameraAsync` o `launchImageLibraryAsync` con `base64: true`.
 - **Composicion del nombre:** `brand - model - name` (max 80 chars).
-- **Categoria:** mapeada al preset mas cercano; si no hay match, se agrega como opcion dinamica al select.
+- **Regex JSON:** `/\{[\s\S]*\}/` (greedy) para capturar objetos anidados completos.
 
 ---
 
 ## Notas de implementacion
 
-### processingRef en ScanPage
+### processingRef en scan
 `useRef(false)` en lugar de `useState` para el flag de procesamiento. El closure de `handleScan` siempre lee el valor mutable actual, evitando que dos escaneos rapidos se procesen en paralelo.
 
 ### Eliminacion en cascada
 `ProductModel.remove(id)` borra primero los logs (`DELETE FROM inventory_logs WHERE product_id=?`) y luego el producto. Necesario porque `PRAGMA foreign_keys = ON` esta activo.
 
 ### Limite de body en Express
-`express.json({ limit: '20mb' })` para soportar imagenes en base64 en `POST /analyze-image`. El limite por defecto (100kb) causaba respuestas HTML 413 que rompian el JSON.parse del frontend.
+`express.json({ limit: '20mb' })` para soportar imagenes en base64 en `POST /analyze-image`. El limite por defecto (100kb) causaba respuestas HTML 413 que rompian el JSON.parse.
+
+### Compatibilidad Android en emulador
+Expo SDK 52 no cumple el requisito de alineacion de paginas de 16KB de Android 15+.
+Usar emulador con **Android 14 (API 34)** con imagen "Google Play". Android 17 da error al iniciar la app.
+
+### expo-asset
+Debe instalarse por separado aunque no aparezca en package.json explicitamente:
+```cmd
+npx expo install expo-asset
+```
+
+### Configuracion de servidor en mobile
+La app mobile no tiene proxy. El usuario configura la IP del backend en la tab "Ajustes".
+La URL se guarda en AsyncStorage con clave `@flexsaas:server_url`.
+El backend debe escuchar en `0.0.0.0` (no `localhost`) para aceptar conexiones LAN.
+En emulador Android usar `http://10.0.2.2:3001` (alias del host). En dispositivo fisico usar la IP LAN del PC.
+
+### Routing mobile — index.jsx
+Expo Router requiere una ruta raiz. `app/index.jsx` hace `<Redirect href="/(tabs)/scan" />`.
+Sin este archivo, la app muestra "NOT FOUND" al arrancar.
+El Stack en `_layout.jsx` solo declara la pantalla `(tabs)` — no declarar pantallas inexistentes o Expo Router emite warning y puede fallar.
+
+### Busqueda server-side
+`LogModel.getStock(block, q)` construye la clausula WHERE dinamicamente segun los parametros presentes.
+El termino `q` se convierte en `%q%` para LIKE. Se busca en `p.name`, `p.barcode` y `p.category`.
+En el cliente, `currentSearch = useRef('')` mantiene el termino activo sin generar re-renders, permitiendo que las funciones de mutacion accedan al valor actual sin stale closure.
 
 ### Migracion SQLite a PostgreSQL
 Solo se modifica `backend/core/database/connection.js`. El resto del codigo no cambia.

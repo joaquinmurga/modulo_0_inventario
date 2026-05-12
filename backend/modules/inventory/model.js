@@ -40,27 +40,39 @@ const LogModel = {
     return { id: result.lastInsertRowid, product_id, quantity, location_block };
   },
 
-  getStock(block = null) {
-    const sql = block
-      ? `SELECT p.id as product_id, p.barcode, p.name, p.category, p.description, p.price,
+  getStock(block = null, q = null) {
+    const like = q ? `%${q}%` : null;
+    const searchClause = like ? '(p.name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)' : null;
+
+    if (block) {
+      const where = searchClause
+        ? `WHERE l.location_block = ? AND ${searchClause}`
+        : 'WHERE l.location_block = ?';
+      const sql = `SELECT p.id as product_id, p.barcode, p.name, p.category, p.description, p.price,
                COALESCE(SUM(l.quantity), 0) as total_quantity,
                l.location_block,
                MAX(l.timestamp) as last_scan
          FROM inventory_logs l
          JOIN products p ON p.id = l.product_id
-         WHERE l.location_block = ?
+         ${where}
          GROUP BY p.id, l.location_block
-         ORDER BY p.name`
-      : `SELECT p.id as product_id, p.barcode, p.name, p.category, p.description, p.price,
+         ORDER BY p.name`;
+      const params = like ? [block, like, like, like] : [block];
+      return db.all(sql, params);
+    }
+
+    const where = searchClause ? `WHERE ${searchClause}` : '';
+    const sql = `SELECT p.id as product_id, p.barcode, p.name, p.category, p.description, p.price,
                COALESCE(SUM(l.quantity), 0) as total_quantity,
                GROUP_CONCAT(DISTINCT l.location_block) as blocks,
                MAX(l.timestamp) as last_scan
          FROM products p
          LEFT JOIN inventory_logs l ON p.id = l.product_id
+         ${where}
          GROUP BY p.id
          ORDER BY p.name`;
-
-    return block ? db.all(sql, [block]) : db.all(sql);
+    const params = like ? [like, like, like] : [];
+    return db.all(sql, params);
   },
 
   getBlocks() {
